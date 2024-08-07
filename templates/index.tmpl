@@ -11,31 +11,62 @@ body {
   background-repeat: no-repeat;
   background-attachment: fixed;
   background-size: 100% 100%;
+  transition: background-image 1s ease-in-out;
 }
+
+.acrylic {
+  background: rgba(255,255,255,0.3);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
 </style>
+
+  <script>
+    async function update() {
+      await fetch('artwork').then(function(res) {
+        return res.json();
+      }).then(function(data) {
+        artwork = data;
+      });
+
+      const container = document.getElementById('body');
+      container.style.backgroundImage = `url('images/${artwork.File}')`;
+
+      const contTitle = document.getElementById('art-title');
+      contTitle.innerHTML = artwork.Title;
+      const contArtist = document.getElementById('art-artist');
+      contArtist.innerHTML = artwork.Artist;
+      const contDesc = document.getElementById('art-desc');
+      contDesc.innerHTML = artwork.Description;
+    }
+
+    setInterval(update, 600000);
+  </script>
+
   </head>
-  <body>
+  <body id="body">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
-    <h1>Hello, world!</h1>
-    <h1>
-        {{ .title }}
-    </h1>
-    <div class="p-3">
     {{ range $vm := .vms }}
-    <div class="card" style="width: 18rem;">
+    <div class="p-3">
+    <div class="card acrylic shadow" style="width: 18rem;">
         <div class="card-body">
-            <h5 class="card-title">{{ $vm }}</h5>
-            <h6 class="card-subtitle mb-2 text-muted">192.168.4.215</h6>
-            <p class="card-text">OS: Miscrosft Windows Server 2022 (64-bit)</p>
-            <p class="card-text">Reason: </p>
-            <a href="#" class="card-link">users</a>
-            <a href="#" class="btn disabled">Request</a>
+            <h5 class="card-title">{{ $vm.Hostname }}</h5>
+            <h6 class="card-subtitle mb-2 text-muted">{{ $vm.Ip }}</h6>
+            <p class="card-text">{{ $vm.Os }}</p>
+            <p class="card-text">Reason: {{ $vm.Reason }}</p>
+            <a href="#" class="card-link m-3">users</a>
+            <a href="#" class="btn disabled m-3 position-absolute bottom-0 end-0">Request</a>
         </div>
     </div>
-    {{ end }}
     </div>
-    <h3>{{ .artwork.Title }}</h3>
-    <h3>{{ .artwork.Artist }}</h3>
-    {{ .desc }}
+    {{ end }}
+
+    <!-- should be 80c -->
+    <div class="card acrylic shadow position-absolute bottom-0 end-0 w-25 p-3 m-3">
+      <h4 class="h4" id="art-title">{{ .artwork.Title }}</h4>
+      <h5 class="text-muted" id="art-artist">{{ .artwork.Artist }}</h5>
+      <div id="art-desc">{{ .desc }}</div>
+    </div>
   </body>
 </html>

@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -18,18 +20,18 @@ import (
 
 func main() {
 	var artwork Artwork
+	var err error
 	fmt.Println("hello world")
 
 	// get a new image every 10min
 	go func() {
+		// 10min for random image, 20 for 403
 		ticker := time.NewTicker(20 * time.Minute)
 		done := make(chan bool)
 
-		next, err := ArtAndCulture()
+		artwork, err = NewArtwork()
 		if err != nil {
 			fmt.Println("art:", err)
-		} else {
-			artwork = next
 		}
 
 		for {
@@ -37,9 +39,9 @@ func main() {
 			case <-done:
 				return
 			case t := <-ticker.C:
-				artwork, err = ArtAndCulture()
+				artwork, err = NewArtwork()
 				if err != nil {
-					panic(err)
+					fmt.Println("art: random:", err)
 				}
 				artwork.Time = t
 				fmt.Println("artwork updated at", t)
@@ -53,7 +55,23 @@ func main() {
 	optNoHttps := flag.Bool("no-https", false, "do not use https")
 	flag.Parse()
 
-	machines := []VirtualMachine{}
+	// read data, for now just json
+	var machines []VirtualMachine
+	data, err := os.ReadFile("daves-vms.json")
+	if err != nil {
+		panic(err)
+	}
+	err = json.Unmarshal(data, &machines)
+	if err != nil {
+		panic(err)
+	}
+
+	var machinesDisp []VirtualMachine
+	for _, machine := range machines {
+		if machine.Reserved != "" {
+			machinesDisp = append(machinesDisp, machine)
+		}
+	}
 
 	router := gin.Default()
 	router.LoadHTMLGlob("templates/*")
@@ -61,7 +79,7 @@ func main() {
 
 	router.GET("/", func(ctx *gin.Context) {
 		ctx.HTML(http.StatusOK, "index.tmpl", gin.H{
-			"vms":     machines,
+			"vms":     machinesDisp,
 			"artwork": artwork,
 			"desc":    template.HTML(artwork.Description),
 			"bg":      "bg.jpg",
@@ -82,20 +100,20 @@ func main() {
 }
 
 type User struct {
-	Name string
-	Pass string
+	Name string `json:"name"`
+	Pass string `json:"pass"`
 }
 
 type VirtualMachine struct {
-	Ip           string
-	Hostname     string
-	Os           string
-	Reserved     string
-	ReservedOn   string
-	Reason       string
-	Location     string
-	HasSnapshots bool
-	Users        []User
+	Ip           string `json:"ip"`
+	Hostname     string `json:"hostname"`
+	Os           string `json:"os"`
+	Reserved     string `json:"reserved"`
+	ReservedOn   string `json:"reservedOn"`
+	Reason       string `json:"reason"`
+	Location     string `json:"location"`
+	HasSnapshots bool   `json:"hasSnapshopts"`
+	Users        []User `json:"users"`
 }
 
 type Artwork struct {
@@ -104,6 +122,19 @@ type Artwork struct {
 	Artist      string
 	File        string
 	Time        time.Time
+}
+
+func NewArtwork() (work Artwork, err error) {
+	work, err = ArtAndCulture()
+	if err != nil {
+		fmt.Println("artwork: art:", err)
+		work, err = RandomCachedArtwork()
+		if err != nil {
+			err = errors.New("random: " + err.Error())
+		}
+	}
+
+	return
 }
 
 func ArtAndCulture() (work Artwork, err error) {
@@ -181,7 +212,13 @@ func ArtAndCulture() (work Artwork, err error) {
 		return
 	}
 
-	iiif := obj["config"].(map[string]any)["iiif_url"].(string) + "/" + result.(map[string]any)["image_id"].(string) + "/full/1920,/0/default.jpg"
+	imageId, ok := result.(map[string]any)["image_id"]
+	if !ok || imageId == nil {
+		err = errors.New("no valid iamge")
+		return
+	}
+
+	iiif := obj["config"].(map[string]any)["iiif_url"].(string) + "/" + imageId.(string) + "/full/1920,/0/default.jpg"
 	res, err = http.Get(iiif)
 	if err != nil {
 		return
@@ -192,7 +229,10 @@ func ArtAndCulture() (work Artwork, err error) {
 		return
 	}
 
-	if res.StatusCode != 200 {
+	if res.StatusCode == 403 {
+		err = errors.New("403: fun police")
+		return
+	} else if res.StatusCode != 200 {
 		err = errors.New(strconv.Itoa(res.StatusCode) + ": " + string(data))
 		return
 	}
@@ -200,6 +240,61 @@ func ArtAndCulture() (work Artwork, err error) {
 	os.WriteFile("images/"+strconv.Itoa(id)+".jpg", data, 0777)
 
 	work.File = strconv.Itoa(id) + ".jpg"
+
+	return
+}
+
+func RandomCachedArtwork() (work Artwork, err error) {
+	files, err := os.ReadDir("images")
+	if err != nil {
+		return
+	}
+	file := files[rand.Int()%len(files)].Name()
+	id, err := strconv.Atoi(strings.ReplaceAll(file, ".jpg", ""))
+	if err != nil {
+		return
+	}
+
+	return GetArtwork(id)
+}
+
+func GetArtwork(id int) (work Artwork, err error) {
+	api := "https://api.artic.edu/api/v1/artworks/" + strconv.Itoa(id) + "?fields=id,title,image_id,description,artist_display"
+	res, err := http.Get(api)
+	if err != nil {
+		return
+	}
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		return
+	}
+
+	var obj map[string]any
+	err = json.Unmarshal(data, &obj)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	result := obj["data"]
+	work.Title = result.(map[string]any)["title"].(string)
+	tmp := result.(map[string]any)["description"]
+	if tmp == nil {
+		tmp = result.(map[string]any)["short_description"]
+		if tmp == nil {
+			tmp = "no description provided"
+		}
+	}
+	work.Description = tmp.(string)
+
+	work.Artist = result.(map[string]any)["artist_display"].(string)
+
+	if _, err = os.Stat("images/" + strconv.Itoa(id) + ".jpg"); err == nil {
+		fmt.Println("cached image", id)
+		work.File = strconv.Itoa(id) + ".jpg"
+		return
+	}
+
+	err = errors.New("image does not exist")
 
 	return
 }

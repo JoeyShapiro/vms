@@ -14,6 +14,10 @@ body {
   transition: background-image 1s ease-in-out;
 }
 
+#progress {
+  transition: width 1s linear;
+}
+
 .acrylic {
   background: rgba(255,255,255,0.3);
   -webkit-backdrop-filter: blur(10px);
@@ -23,7 +27,17 @@ body {
 </style>
 
   <script>
+    var cooldown = 0;
     async function update() {
+      var progress = document.getElementById("progress");
+      cooldown += 1000;
+      if (cooldown < 600000) {
+        progress.style.width = `${cooldown / 600000 * 100}%`;
+        return;
+      }
+      cooldown = 0;
+      progress.style.width = 0;
+
       await fetch('artwork').then(function(res) {
         return res.json();
       }).then(function(data) {
@@ -41,32 +55,38 @@ body {
       contDesc.innerHTML = artwork.Description;
     }
 
-    setInterval(update, 600000);
+    setInterval(update, 1000);
   </script>
 
   </head>
   <body id="body">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    <div class="row row-cols-md-3 w-50">
+    <!-- could have this scrolling idk -->
     {{ range $vm := .vms }}
-    <div class="p-3">
+    <div class="p-3 col">
     <div class="card acrylic shadow" style="width: 18rem;">
         <div class="card-body">
             <h5 class="card-title">{{ $vm.Hostname }}</h5>
-            <h6 class="card-subtitle mb-2 text-muted">{{ $vm.Ip }}</h6>
-            <p class="card-text">{{ $vm.Os }}</p>
-            <p class="card-text">Reason: {{ $vm.Reason }}</p>
+            <h6 class="card-subtitle text-muted">{{ $vm.Ip }}</h6>
+            <div class="card-text">{{ $vm.Os }}</div>
+            <div class="card-text overflow-auto p-1 m-1 text-muted">{{ $vm.Reason }}</div>
             <a href="#" class="card-link m-3">users</a>
             <a href="#" class="btn disabled m-3 position-absolute bottom-0 end-0">Request</a>
         </div>
     </div>
     </div>
     {{ end }}
+    </div>
 
     <!-- should be 80c -->
     <div class="card acrylic shadow position-absolute bottom-0 end-0 w-25 p-3 m-3">
       <h4 class="h4" id="art-title">{{ .artwork.Title }}</h4>
       <h5 class="text-muted" id="art-artist">{{ .artwork.Artist }}</h5>
       <div id="art-desc">{{ .desc }}</div>
+      <div class="progress bottom-0" role="progressbar" style="height: 1px">
+        <div id="progress" class="progress-bar" style="width: 0%"></div>
+      </div>
     </div>
   </body>
 </html>
